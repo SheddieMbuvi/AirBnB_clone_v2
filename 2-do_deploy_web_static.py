@@ -24,46 +24,36 @@ def do_pack():
     except BaseException:
         return None
 
-
 def do_deploy(archive_path):
-    """distributes an archive to my web servers"""
-    if not os.path.exists(archive_path):
+    """ uploads the archive to servers """
+    destination = "/tmp/" + archive_path.split("/")[-1]
+    result = put(archive_path, "/tmp/")
+    if result.failed:
         return False
-    try:
-        # Upload archive
-        put(archive_path, '/tmp/')
-
-        # Create a target dir without the file extension
-        timestamp = time.strftime("%Y%m%d%H%M%S")
-        run(
-            'sudo mkdir -p /data/web_static/releases/web_static_{:s}/'.
-            format(timestamp))
-
-        # uncompress archive to the targed dir
-        run('sudo tar xzvf /tmp/web_static_{:s}.tgz --directory\
-            /data/web_static/releases/web_static_{:s}/'.
-            format(timestamp, timestamp))
-
-        # delete the archive from the web server
-        run('sudo rm /tmp/web_static_{:s}.tgz'.format(timestamp))
-
-        # move contents into host web_static
-        run('sudo mv /data/web_static/releases/web_static_{:s}/web_static/*\
-            /data/web_static/releases/web_static_{}/'.format(
-            timestamp, timestamp))
-
-        # remove irrelevant web_static dir
-        run('sudo rm -rf /data/web_static/releases/web_static_{}/web_static'.
-            format(timestamp))
-
-        # delete the initial symbolic link from the web server
-        run('sudo rm -rf /data/web_static/current')
-
-        # create a new symbolic link
-        run('sudo ln -s /data/web_static/releases/web_static_{:s}/ \
-            /data/web_static/current'.format(
-            timestamp))
-    except BaseException:
+    filename = archive_path.split("/")[-1]
+    f = filename.split(".")[0]
+    directory = "/data/web_static/releases/" + f
+    run_res = run("mkdir -p \"%s\"" % directory)
+    if run_res.failed:
         return False
-    # if all that succeeded, return True
+    run_res = run("tar -xzf %s -C %s" % (destination, directory))
+    if run_res.failed:
+        return False
+    run_res = run("rm %s" % destination)
+    if run_res:
+        return False
+    web = directory + "/web_static/*"
+    run_res = run("mv %s %s" % (web, directory))
+    if run_res.failed:
+        return False
+    web = web[0:-2]
+    run_res = run("rm -rf %s" % web)
+    if run_res.failed:
+        return False
+    run_res = run("rm -rf /data/web_static/current")
+    if run_res.failed:
+        return False
+    run_res = run("ln -s %s /data/web_static/current" % directory)
+    if run_res.failed:
+        return False
     return True
