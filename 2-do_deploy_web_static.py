@@ -1,57 +1,69 @@
 #!/usr/bin/python3
+"""Fabric script (based on the file 1-pack_web_static.py)
+that distributes an archive to your web servers,
+using the function do_deploy
 """
-a Fabric script that generates a .tgz archive
-from the contents of the web_static folder of the AirBnB Clone repo
-"""
-from fabric.operations import local, put, run
-from datetime import datetime as d
+import time
+import os
 from fabric.api import *
+from fabric.operations import run, put
 
-env.hosts = ['34.74.120.150', '54.173.196.75']
+
+env.hosts = ['52.91.135.108', '100.25.223.51']
+env.user = 'ubuntu'
 
 
 def do_pack():
-    """ generates a .tgz archive """
-    name = "versions/web_static_" + str(d.now().year)
-    name += str(d.now().month) + str(d.now().day) + str(d.now().hour)
-    name += str(d.now().minute) + str(d.now().second) + ".tgz"
-    result = local("mkdir -p versions; tar -cvzf \"%s\" web_static" % name)
-    if result.failed:
-        return NULL
-    else:
-        return name
+    """generates a .tgz archive"""
+    try:
+        local("mkdir -p versions")
+        local("tar -cvzf versions/web_static_{:s}.tgz web_static/".
+              format(time.strftime("%Y%m%d%H%M%S")))
+        return "versions/web_static_{:s}.tgz".\
+            format(time.strftime("%Y%m%d%H%M%S"))
+    except BaseException:
+        return None
 
 
 def do_deploy(archive_path):
-    """ uploads the archive to servers """
-    destination = "/tmp/" + archive_path.split("/")[-1]
-    result = put(archive_path, "/tmp/")
-    if result.failed:
+    """distributes an archive to my web servers"""
+    if not os.path.exists(archive_path):
         return False
-    filename = archive_path.split("/")[-1]
-    f = filename.split(".")[0]
-    directory = "/data/web_static/releases/" + f
-    run_res = run("mkdir -p \"%s\"" % directory)
-    if run_res.failed:
+    try:
+        # Upload archive
+        put(archive_path, '/tmp/')
+
+        # Create a target dir without the file extension
+        timestamp = time.strftime("%Y%m%d%H%M%S")
+        run(
+            'sudo mkdir -p /data/web_static/releases/web_static_{:s}/'.
+            format(timestamp))
+
+        # uncompress archive to the targed dir
+        run('sudo tar xzvf /tmp/web_static_{:s}.tgz --directory\
+            /data/web_static/releases/web_static_{:s}/'.
+            format(timestamp, timestamp))
+
+        # delete the archive from the web server
+        run('sudo rm /tmp/web_static_{:s}.tgz'.format(timestamp))
+
+        # move contents into host web_static
+        run('sudo mv /data/web_static/releases/web_static_{:s}/web_static/*\
+            /data/web_static/releases/web_static_{}/'.format(
+            timestamp, timestamp))
+
+        # remove irrelevant web_static dir
+        run('sudo rm -rf /data/web_static/releases/web_static_{}/web_static'.
+            format(timestamp))
+
+        # delete the initial symbolic link from the web server
+        run('sudo rm -rf /data/web_static/current')
+
+        # create a new symbolic link
+        run('sudo ln -s /data/web_static/releases/web_static_{:s}/ \
+            /data/web_static/current'.format(
+            timestamp))
+    except BaseException:
         return False
-    run_res = run("tar -xzf %s -C %s" % (destination, directory))
-    if run_res.failed:
-        return False
-    run_res = run("rm %s" % destination)
-    if run_res:
-        return False
-    web = directory + "/web_static/*"
-    run_res = run("mv %s %s" % (web, directory))
-    if run_res.failed:
-        return False
-    web = web[0:-2]
-    run_res = run("rm -rf %s" % web)
-    if run_res.failed:
-        return False
-    run_res = run("rm -rf /data/web_static/current")
-    if run_res.failed:
-        return False
-    run_res = run("ln -s %s /data/web_static/current" % directory)
-    if run_res.failed:
-        return False
+    # if all that succeeded, return True
     return True
